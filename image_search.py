@@ -134,6 +134,41 @@ class FoodImageSearch():
 
 
 
+    def calculate_sift_similarity(img1, img2, similarity_ratio = 0.8):
+    
+        img1, _ = img1
+        img2, _ = img2
+
+        img1 = np.array(img1)
+        img2 = np.array(img2)
+        gray1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
+        gray2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
+
+        sift = cv2.SIFT_create()
+
+        kp1, des1 = sift.detectAndCompute(gray1, None)
+        kp2, des2 = sift.detectAndCompute(gray2, None)
+
+        if des1 is None or des2 is None:   #бувало, що не знаходить дескріптори для картинки
+            return 0.0 
+
+        bf = cv2.BFMatcher(normType=cv2.NORM_L2)
+        matches = bf.knnMatch(des1, des2, k=2)
+
+        good = []
+        for m, n in matches:
+            if m.distance < similarity_ratio * n.distance: 
+                good.append([m])
+
+        similarity_score = len(good) / np.min([len(des1), len(des2)])   #впливає дуже сильно те, як порахувати знаменник
+
+        return similarity_score
+
+
+
+
+
+
 
 
 
