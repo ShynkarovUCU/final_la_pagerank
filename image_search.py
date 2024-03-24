@@ -321,32 +321,32 @@ class FoodImageSearch():
         if self.input_img_features is None:
             print('You need to use get_sift_similarities() method first')
         else:      
-            image_features = [self.input_img_features] + self.train_img_features
+            image_features = [self.input_img_features] + self.train_img_features 
             
             N = len(image_features)
 
             S = np.zeros((N, N))
 
 
-            for i in range(N):
+            for i in tqdm(range(N), desc='Matrix creation...', ascii=True):
                 for j in range(i, N):
                     des1 = image_features[i]
                     des2 = image_features[j]
  
-                bf = BFMatcher()
-                matches = bf.knnMatch(des1, des2, k=2)
+                    bf = BFMatcher()
+                    matches = bf.knnMatch(des1, des2, k=2)
 
-                good_matches = []
-                for m,n in matches:
-                    if m.distance < similarity_ratio * n.distance:
-                        good_matches.append(m)
+                    good_matches = []
+                    for m,n in matches:
+                        if m.distance < similarity_ratio * n.distance:
+                            good_matches.append(m)
 
-                if des1 is None or des2 is None:
-                    similarity = 0
-                else:
-                    similarity = 2.0 * len(good_matches) / np.min([len(des1), len(des2)])
-
-                S[i,j] = S[j,i] = similarity
+                    if des1 is None or des2 is None:
+                        similarity = 0
+                    else:
+                        similarity = 2.0 * len(good_matches) / np.min([len(des1), len(des2)])
+                
+                    S[i,j] = S[j,i] = similarity
 
         S[S > 1] = 1
 
@@ -367,18 +367,22 @@ class FoodImageSearch():
             scores = np.zeros(N)
             scores[0] = 1
         
+
         for i in range(maxIters):
             newScores = (1-d)/N + d * (S_norm @ scores) 
             if np.allclose(scores, newScores):
                 break
             scores = newScores
 
-
-        # sorted_indices = np.argsort(scores)[::-1]  # -1 to get descending order
-        # self.rank_indeces = self.ann_indeces[sorted_indices]
+        print(f'The number of iterations is {i}')
 
 
-        return scores  #, self.rank_indeces
+        scores = scores[1:]   #remove the first score for the input image
+        sorted_indices = np.argsort(scores)[::-1]  # -1 to get descending order
+        self.rank_indeces = self.ann_indeces[sorted_indices]
+
+
+        return scores, self.rank_indeces
 
 
 
