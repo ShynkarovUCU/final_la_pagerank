@@ -16,7 +16,7 @@ from torchvision import models, transforms, datasets
 from annoy import AnnoyIndex
 from tqdm import tqdm
 
-
+import pickle
 
 
 
@@ -27,6 +27,8 @@ class FoodImageSearch():
         
         self.input_img = None
         self.sift_similarities = None
+        self.train_img_features = []
+        self.input_img_features = None
 
 
         def _fix_names(state_dict):
@@ -141,6 +143,19 @@ class FoodImageSearch():
         
 
 
+    def _save_pickle_object(self, data, file_path):
+        with open(file_path, 'wb') as file:
+            pickle.dump(data, file)
+
+
+
+    def _read_pickle_object(file_path):
+        with open(file_path, 'rb') as file:
+            data = pickle.load(file)
+        return data
+
+
+
     def _calculate_sift_features(self, img):
         img = np.array(img)
         gray = cvtColor(img, COLOR_RGB2GRAY)
@@ -159,36 +174,36 @@ class FoodImageSearch():
         else:
             self.sift_similarities = np.zeros(len(self.ann_indeces))
 
-            train_img_features = []
-            input_img_features = self._calculate_sift_features(self.input_img[0])
+            self.train_img_features = []
+            self.input_img_features = self._calculate_sift_features(self.input_img[0])
 
             for index in tqdm(self.ann_indeces, desc='Features searching', ascii=True):
-                train_img_features.append(self._calculate_sift_features(self.train_dataset[index][0]))
+                self.train_img_features.append(self._calculate_sift_features(self.train_dataset[index][0]))
 
 
             bf = BFMatcher(normType=NORM_L2)            
 
 
-            for i, feature in tqdm(enumerate(train_img_features), desc='Similarities calculation', ascii=True):
+            for i, feature in tqdm(enumerate(self.train_img_features), desc='Similarities calculation', ascii=True):
                 if feature is None:
                     self.sift_similarities[i] = 0
                 else:
-                    matches = bf.knnMatch(input_img_features, feature, k=2)
+                    matches = bf.knnMatch(self.input_img_features, feature, k=2)
                     
                     good_matches = []
                     for m, n in matches:
                         if m.distance < similarity_ratio * n.distance: 
                             good_matches.append([m])
 
-                    self.sift_similarities[i] = len(good_matches) / np.min([len(input_img_features), len(feature)])                
+                    self.sift_similarities[i] = len(good_matches) / np.min([len(self.input_img_features), len(feature)])                
                 
 
 
             print('Finalizing results...')
             sorted_indices = np.argsort(self.sift_similarities)[::-1]  # -1 to get descending order
             # self.sift_similarities = self.sift_similarities[sorted_indices]
-            self.sift_indeces = np.array(self.layer_data.index)[sorted_indices]
-
+            self.sift_indeces = self.ann_indeces[sorted_indices]
+    
 
 
     def get_sift_similarity_for_pair(self, img1, img2, similarity_ratio = 0.8):
@@ -286,7 +301,7 @@ class FoodImageSearch():
 
 
     def get_sift_similarities(self):
-        if self.sift_similarities == None: 
+        if self.sift_similarities is None: 
             self._calculate_sift_similarities()
             return self.sift_similarities
         else:
@@ -302,7 +317,68 @@ class FoodImageSearch():
 
 
 
+    def _create_adjacency_matrix(self, similarity_ratio = 0.8):
+        if self.input_img_features is None:
+            print('You need to use get_sift_similarities() method first')
+        else:      
+            image_features = [self.input_img_features] + self.train_img_features
+            
+            N = len(image_features)
 
+            S = np.zeros((N, N))
+
+
+            for i in range(N):
+                for j in range(i, N):
+                    des1 = image_features[i]
+                    des2 = image_features[j]
+ 
+                bf = BFMatcher()
+                matches = bf.knnMatch(des1, des2, k=2)
+
+                good_matches = []
+                for m,n in matches:
+                    if m.distance < similarity_ratio * n.distance:
+                        good_matches.append(m)
+
+                if des1 is None or des2 is None:
+                    similarity = 0
+                else:
+                    similarity = 2.0 * len(good_matches) / np.min([len(des1), len(des2)])
+
+                S[i,j] = S[j,i] = similarity
+
+        S[S > 1] = 1
+
+        return S 
+
+
+
+    def image_PageRank(self, S, d=0.85, maxIters=100, scores_init = 'default'):
+        N = S.shape[0]
+            
+        #normalize the similarity matrix by column sums
+        S_norm = S / S.sum(axis=0)
+        
+        if scores_init == 'default':
+            scores = np.ones(N) / N
+        else:
+            #[1, 0, 0, ..., 0]
+            scores = np.zeros(N)
+            scores[0] = 1
+        
+        for i in range(maxIters):
+            newScores = (1-d)/N + d * (S_norm @ scores) 
+            if np.allclose(scores, newScores):
+                break
+            scores = newScores
+
+
+        # sorted_indices = np.argsort(scores)[::-1]  # -1 to get descending order
+        # self.rank_indeces = self.ann_indeces[sorted_indices]
+
+
+        return scores  #, self.rank_indeces
 
 
 
