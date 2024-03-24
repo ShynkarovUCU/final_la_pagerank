@@ -1,7 +1,7 @@
 # import sys
-# import random
 
 import os
+import random
 
 import torch
 import torch.nn as nn
@@ -125,6 +125,39 @@ class FoodImageSearch():
         hook_handle.remove()
        
         return self.last_hidden_layer_output[0]
+
+
+
+    def _predict_cnn_class(self, img):
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                    std=[0.229, 0.224, 0.225])
+        transform = transforms.Compose([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                normalize,
+            ])
+        img = transform(img[0])
+
+        with torch.no_grad():
+            output = self.model(img.unsqueeze(0))
+            _, predicted = torch.max(output, 1)                
+
+        return predicted.item()
+
+
+
+    def find_100_items_from_predict(self):
+        if self.input_img is None:
+            print("There is no input image registered. Use register_input() to get the result")
+        else:        
+            predicted_class = self._predict_cnn_class(self.input_img)
+            predicted_items = np.array(self.layer_data[self.layer_data['correct'] == predicted_class].index[0:50])
+            remaining_items = self.layer_data[~self.layer_data.index.isin(predicted_items)]
+            random_items = np.array(remaining_items.sample(n=50).index)
+
+            self.ann_indeces = np.concatenate([predicted_items, random_items])
+            self.distances = np.zeros(len(self.ann_indeces))
 
 
 
@@ -283,6 +316,30 @@ class FoodImageSearch():
 
 
 
+    def show_n_random_pictures(self, n):
+        if self.input_img is None:
+            print("There is no input image registered. Use register_input() to get the result")
+        else:
+            num_rows = (n + 4) // 5  
+            plt.figure(figsize=(40, 8 * num_rows))  
+
+            for i, idx_train in enumerate(self.layer_data.sample(n).index):    
+                image, label = self.train_dataset[idx_train]
+
+                # row = i // 5  
+                # col = i % 5 
+                plt.subplot(num_rows, 5, i + 1)
+                plt.imshow(image)
+                plt.title(f'Label: {self.train_dataset.classes[label]}', fontsize=20) #, Distance: {round(self.distances[i], 2)}
+                plt.axis('off')
+
+            plt.tight_layout() 
+            plt.show()
+
+
+
+
+
     def print_accuracy_of_closest_pictures(self):
         if self.input_img is None:
             print("There is no input image registered. Use register_input() to get the result")
@@ -332,18 +389,18 @@ class FoodImageSearch():
                 for j in range(i, N):
                     des1 = image_features[i]
                     des2 = image_features[j]
- 
-                    bf = BFMatcher()
-                    matches = bf.knnMatch(des1, des2, k=2)
-
-                    good_matches = []
-                    for m,n in matches:
-                        if m.distance < similarity_ratio * n.distance:
-                            good_matches.append(m)
 
                     if des1 is None or des2 is None:
                         similarity = 0
-                    else:
+                    else: 
+                        bf = BFMatcher()
+                        matches = bf.knnMatch(des1, des2, k=2)
+
+                        good_matches = []
+                        for m,n in matches:
+                            if m.distance < similarity_ratio * n.distance:
+                                good_matches.append(m)
+
                         similarity = 2.0 * len(good_matches) / np.min([len(des1), len(des2)])
                 
                     S[i,j] = S[j,i] = similarity
